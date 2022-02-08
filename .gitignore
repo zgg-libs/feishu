@@ -1,0 +1,5 @@
+test.zgg
+.DS_Store
+*.sw?
+.*.sw?
+*.py?

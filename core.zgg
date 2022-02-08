@@ -1,0 +1,59 @@
+
+export class App {
+
+    __init__(appId, appSecret) {
+        this.appId = appId
+        this.appSecret = appSecret
+        this._mutex = @concurrent.Mutex()
+        this._tokenCache = [0, nil] // deadline, response
+    }
+
+    getTenantAcctssToken() {
+        now := @time.time()
+        if now < this._tokenCache[0] {
+            return this._tokenCache[1].tenant_access_token
+        }
+        this._mutex.lock()
+        defer this._mutex.unlock()
+        if now < this._tokenCache[0] {
+            return this._tokenCache[1].tenant_access_token
+        }
+        r := @json.decode(@http.postJson('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal/', {
+            app_id: this.appId,
+            app_secret: this.appSecret,
+        }))
+        assert r.code == 0, '获取tenant_access_token失败，原因: ${r.msg ?? '未知'}'
+        this._tokenCache = [now + r.expire - 1, r]
+        return r.tenant_access_token
+    }
+
+    iterPage(baseUrl, params, callback) {
+        pageToken := ''
+        params = params ?? {}
+        hasMore := true
+        while hasMore {
+            params.page_token = pageToken
+            url := baseUrl + '?' + @url.encodeForm(params)
+            r := @http.getJson(url, {
+                Authorization: 'Bearer ${this.getTenantAcctssToken()}',
+            })
+            data := must(r)
+            callback(data.items ?? [])
+            hasMore = data.has_more
+            pageToken = data.page_token
+        }
+    }
+
+    allPages(baseUrl, params) {
+        params = params ?? {page_size: 100}
+        rv := []
+        this.iterPage(baseUrl, params, chunk => rv += chunk)
+        return rv
+    }
+
+}
+
+export must := r => {
+    assert r.code == 0, '飞书返回错误：${r.code ?? 'N/A'}:${r.msg ?? '未知错误'}'
+    return r.data
+}
