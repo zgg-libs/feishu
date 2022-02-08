@@ -1,4 +1,62 @@
-core := import('./core')
+
+export class App {
+
+    __init__(appId, appSecret) {
+        this.appId = appId
+        this.appSecret = appSecret
+        this._mutex = @concurrent.Mutex()
+        this._tokenCache = [0, nil] // deadline, response
+    }
+
+    getTenantAcctssToken() {
+        now := @time.time()
+        if now < this._tokenCache[0] {
+            return this._tokenCache[1].tenant_access_token
+        }
+        this._mutex.lock()
+        defer this._mutex.unlock()
+        if now < this._tokenCache[0] {
+            return this._tokenCache[1].tenant_access_token
+        }
+        r := @json.decode(@http.postJson('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal/', {
+            app_id: this.appId,
+            app_secret: this.appSecret,
+        }))
+        assert r.code == 0, '获取tenant_access_token失败，原因: ${r.msg ?? '未知'}'
+        this._tokenCache = [now + r.expire - 1, r]
+        return r.tenant_access_token
+    }
+
+    iterPage(baseUrl, params, callback) {
+        pageToken := ''
+        params = params ?? {}
+        hasMore := true
+        while hasMore {
+            params.page_token = pageToken
+            url := baseUrl + '?' + @url.encodeForm(params)
+            r := @http.getJson(url, {
+                Authorization: 'Bearer ${this.getTenantAcctssToken()}',
+            })
+            data := must(r)
+            callback(data.items ?? [])
+            hasMore = data.has_more
+            pageToken = data.page_token
+        }
+    }
+
+    allPages(baseUrl, params) {
+        params = params ?? {page_size: 100}
+        rv := []
+        this.iterPage(baseUrl, params, chunk => rv += chunk)
+        return rv
+    }
+
+}
+
+export must := r => {
+    assert r.code == 0, '飞书返回错误：${r.code ?? 'N/A'}:${r.msg ?? '未知错误'}'
+    return r.data
+}
 
 export class Table {
     __init__(app, ssToken) {
@@ -11,7 +69,7 @@ export class Table {
     }
     refreshMeta() {
         url := 'https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${this.ssToken}/metainfo'
-        this._meta = core.must(@http.getJson(url, {
+        this._meta = must(@http.getJson(url, {
             Authorization: 'Bearer ' + this.app.getTenantAcctssToken(),
         }))
         return this._meta
@@ -34,7 +92,7 @@ export class Table {
     getRange(range, renderOption) {
         url := 'https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${this.ssToken}/values/${range}'
         url += '?valueRenderOption=${renderOption ?? 'ToString'}'
-        return core.must(@http.getJson(url, {
+        return must(@http.getJson(url, {
             Authorization: 'Bearer ' + this.app.getTenantAcctssToken(),
         }))
     }
@@ -60,7 +118,7 @@ export class Table {
                 valueRange: { range, values }
             }))
             .call())
-        return core.must(rsp.json())
+        return must(rsp.json())
     }
     addRow(sheet, start, num) {
         num = num ?? 1
@@ -73,7 +131,6 @@ export class Table {
                 endIndex: start + num,
             },
         }, 2)
-        println(data)
         rsp := use (@http.Request('POST', url)
             .header({
                 Authorization: 'Bearer ' + this.app.getTenantAcctssToken(),
@@ -81,7 +138,7 @@ export class Table {
             })
             .data(data)
             .call())
-        return core.must(rsp.json())
+        return must(rsp.json())
     }
 }
 
