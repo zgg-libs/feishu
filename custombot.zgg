@@ -1,0 +1,38 @@
+
+export class BotV2 {
+	__init__(url) {
+		this.url = url
+	}
+	send(payload) {
+		return @http.postJson(this.url, payload)
+	}
+	sendText(text, title) {
+		return this.send(when {
+			title	-> this.makeZhPost({
+				title,
+				content: [text.split('\n').map(l => ({
+					tag: 'text',
+					text: l,
+				}))],
+			})
+			else	-> this.makeText(text)
+		})
+	}
+	makeText(text) {
+		return {
+			msg_type: 'text',
+			content: {text},
+		}
+	}
+	makeZhPost(content) {
+		return {
+			msg_type: 'post',
+			content: {
+				post: {
+					zh_cn: content,
+				}
+			}
+		}
+	}
+}
+
