@@ -1,4 +1,134 @@
+must := import('./core').must
 
-export App := import('./core').App
+export class Table {
+    __init__(app, ssToken) {
+        this.app = app
+        this.ssToken = ssToken
+        this._meta = nil
+    }
+    getMeta() {
+        return this._meta ?? this.refreshMeta()
+    }
+    refreshMeta() {
+        url := 'https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${this.ssToken}/metainfo'
+        this._meta = must(@http.getJson(url, {
+            Authorization: 'Bearer ' + this.app.getTenantAcctssToken(),
+        }))
+        return this._meta
+    }
+    sheetId(sheet) {
+        if type(sheet) == Int {
+            sheet = this.getMeta().sheets[sheet]
+        } else if type(sheet) == Str {
+            sheet = this.getMeta().sheets.find(s => s.sheetId == sheet)
+        }
+        return sheet.sheetId
+    }
+    makeRange(sheet, row, col, row2, col2) {
+        if row2 && col2 {
+            return '${this.sheetId(sheet)}!${getColKey(col)}$row:${getColKey(col2)}$row2'
+        } else {
+            return '${this.sheetId(sheet)}!${getColKey(col)}$row'
+        }
+    }
+    getRange(range, renderOption) {
+        url := 'https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${this.ssToken}/values/${range}'
+        url += '?valueRenderOption=${renderOption ?? 'ToString'}'
+        return must(@http.getJson(url, {
+            Authorization: 'Bearer ' + this.app.getTenantAcctssToken(),
+        }))
+    }
+    getSheetData(sheet, renderOption) {
+        if type(sheet) == Int {
+            sheet = this.getMeta().sheets[0]
+        } else if type(sheet) == Str {
+            sheet = this.getMeta().sheets.find(s => s.sheetId == sheet)
+        }
+        assert sheet.sheetId
+        allRange := '${sheet.sheetId}!A1:${getColKey(sheet.columnCount)}${sheet.rowCount}'
+        data := this.getRange(allRange, renderOption).valueRange.values
+        return cleanData(data)
+    }
+    setRange(range, values) {
+        url := 'https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${this.ssToken}/values'
+        rsp := use (@http.Request('PUT', url)
+            .header({
+                Authorization: 'Bearer ' + this.app.getTenantAcctssToken(),
+                'Content-Type': 'application/json; charset=utf-8',
+            })
+            .data(@json.encode({
+                valueRange: { range, values }
+            }))
+            .call())
+        return must(rsp.json())
+    }
+    addRow(sheet, start, num) {
+        num = num ?? 1
+        url := 'https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${this.ssToken}/insert_dimension_range'
+        data := @json.encode({
+            dimension: {
+                sheetId: this.sheetId(sheet),
+                majorDimension: 'ROWS', 
+                startIndex: start,
+                endIndex: start + num,
+            },
+        }, 2)
+        rsp := use (@http.Request('POST', url)
+            .header({
+                Authorization: 'Bearer ' + this.app.getTenantAcctssToken(),
+                'Content-Type': 'application/json; charset=utf-8',
+            })
+            .data(data)
+            .call())
+        return must(rsp.json())
+    }
+}
 
-export Table := import('./table').Table
+func removeNilRows(data) {
+    n := len(data)
+    while n > 0 { 
+        last := n - 1 
+        row := data[last]
+        if isArray(row) && row.findIndex(cell => cell != nil) >= 0 { 
+            break
+        }   
+        n = last
+    }
+    return n == 0 ? []: data.slice(0, n)
+}
+
+func removeNilCols(data) {
+    maxCols := 0
+    for row in data {
+        cols := len(row)
+        while cols > 0 { 
+            p := cols - 1 
+            if row[p] == nil {
+                cols = p 
+            } else {
+                break
+            }   
+        }   
+        if cols > maxCols {
+            maxCols = cols
+        }   
+    }   
+    return data.map(r => r.slice(0, maxCols).map(v => str(v ?? '')))
+}
+
+func cleanData(data) {
+    return removeNilCols(removeNilRows(data))
+}
+
+func getColKey(colIndex) {
+    s := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    assert colIndex > 0
+    res := ''
+    while colIndex > 0 {
+        colIndex--
+        p := colIndex % 26
+        res = str(s[p]) + res
+        colIndex /= 26
+    }
+    return res
+}
