@@ -82,6 +82,19 @@ export class Table {
             .call())
         return must(rsp.json())
     }
+    setStyle(range, style) {
+        url := 'https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${this.ssToken}/style'
+        rsp := use (@http.Request('PUT', url)
+            .header({
+                Authorization: 'Bearer ' + this.app.getTenantAcctssToken(),
+                'Content-Type': 'application/json; charset=utf-8',
+            })
+            .data(@json.encode({
+                appendStyle: { range, style },
+            }))
+            .call())
+        return must(rsp.json())
+    }
 }
 
 func removeNilRows(data) {
