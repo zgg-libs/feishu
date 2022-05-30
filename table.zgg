@@ -40,7 +40,7 @@ export class Table {
     }
     getSheetData(sheet, renderOption) {
         if type(sheet) == Int {
-            sheet = this.getMeta().sheets[0]
+            sheet = this.getMeta().sheets[sheet]
         } else if type(sheet) == Str {
             sheet = this.getMeta().sheets.find(s => s.sheetId == sheet)
         }
@@ -62,8 +62,16 @@ export class Table {
             .call())
         return must(rsp.json())
     }
-    addRow(sheet, start, num) {
-        num = num ?? 1
+    addRow(sheet, start, numOrContent) {
+		[content, num] := [[], 1]
+		if isArray(numOrContent) {
+			content = numOrContent
+			num     = len(content)
+		}
+		if start < 0 {
+			orig := this.getSheetData(sheet)
+			start = len(orig) + start + 1
+		}
         url := 'https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${this.ssToken}/insert_dimension_range'
         data := @json.encode({
             dimension: {
@@ -80,7 +88,16 @@ export class Table {
             })
             .data(data)
             .call())
-        return must(rsp.json())
+        must(rsp.json())
+		// fix content if needed
+		colNum := 1
+		for i, row in content {
+			if !isArray(row) {
+				content[i] = [row]
+			}
+			colNum = max(len(content[i]), colNum)
+		}
+		return this.setRange(this.makeRange(sheet, start + 1, 1, start + num, colNum), content)
     }
     setStyle(range, style) {
         url := 'https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${this.ssToken}/style'
