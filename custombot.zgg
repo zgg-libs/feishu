@@ -10,10 +10,10 @@ export class BotV2 {
 		return this.send(when {
 			title	-> this.makeZhPost({
 				title,
-				content: [text.split('\n').map(l => ({
+				content: text.split('\n').map(l => [{
 					tag: 'text',
 					text: l,
-				}))],
+				}]),
 			})
 			else	-> this.makeText(text)
 		})
