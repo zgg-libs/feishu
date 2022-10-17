@@ -99,6 +99,25 @@ export class Table {
 		}
 		return this.setRange(this.makeRange(sheet, start + 1, 1, start + num, colNum), content)
     }
+	addCol(sheet, start, num) {
+        url := 'https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${this.ssToken}/insert_dimension_range'
+        data := @json.encode({
+            dimension: {
+                sheetId: this.sheetId(sheet),
+                majorDimension: 'COLUMNS',
+                startIndex: start,
+                endIndex: start + num,
+            },
+        }, 2)
+        rsp := use (@http.Request('POST', url)
+            .header({
+                Authorization: 'Bearer ' + this.app.getTenantAcctssToken(),
+                'Content-Type': 'application/json; charset=utf-8',
+            })
+            .data(data)
+            .call())
+        must(rsp.json())
+    }
     setStyle(range, style) {
         url := 'https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${this.ssToken}/style'
         rsp := use (@http.Request('PUT', url)
