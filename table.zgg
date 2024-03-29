@@ -16,13 +16,16 @@ export class Table {
         }))
         return this._meta
     }
-    sheetId(sheet) {
+    sheetInfo(sheet) {
         if type(sheet) == Int {
-            sheet = this.getMeta().sheets[sheet]
+            return this.getMeta().sheets[sheet]
         } else if type(sheet) == Str {
-            sheet = this.getMeta().sheets.find(s => s.sheetId == sheet)
+            return this.getMeta().sheets.find(s => s.sheetId == sheet)
         }
-        return sheet.sheetId
+        return nil
+    }
+    sheetId(sheet) {
+		return this.sheetInfo(sheet).sheetId
     }
     makeRange(sheet, row, col, row2, col2) {
         if row2 && col2 {
