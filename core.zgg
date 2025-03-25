@@ -27,16 +27,18 @@ export class App {
         return r.tenant_access_token
     }
 
-    iterPage(baseUrl, params, callback) {
+    getAuthHeader() {
+        return {Authorization: 'Bearer ' + this.getTenantAcctssToken()}
+    }
+    iterPage(baseUrl, params, callback, requestFn) {
         pageToken := ''
         params = params ?? {}
         hasMore := true
+        requestFn = requestFn ?? @http.getJson
         while hasMore {
             params.page_token = pageToken
             url := baseUrl + '?' + @url.encodeForm(params)
-            r := @http.getJson(url, {
-                Authorization: 'Bearer ${this.getTenantAcctssToken()}',
-            })
+            r := requestFn(url, this.getAuthHeader())
             data := must(r)
             callback(data.items ?? [])
             hasMore = data.has_more
@@ -44,10 +46,10 @@ export class App {
         }
     }
 
-    allPages(baseUrl, params) {
+    allPages(baseUrl, params, requestFn) {
         params = params ?? {page_size: 100}
         rv := []
-        this.iterPage(baseUrl, params, chunk => rv += chunk)
+        this.iterPage(baseUrl, params, chunk => rv += chunk, requestFn)
         return rv
     }
 
