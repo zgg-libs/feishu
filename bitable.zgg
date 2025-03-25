@@ -1,0 +1,201 @@
+
+export class BITable {
+    __init__(app, appToken) {
+        this.app = app
+        this.appToken = appToken
+        this._meta = nil
+    }
+    getMeta() {
+        return this._meta ?? this.refreshMeta()
+    }
+    refreshMeta() {
+        url := 'https://open.feishu.cn/open-apis/bitable/v1/apps/${this.appToken}'
+        return @http.getJson(url, this.app.getAuthHeader())
+    }
+    listTables() {
+        url := 'https://open.feishu.cn/open-apis/bitable/v1/apps/${this.appToken}/tables'
+        return this.app.allPages(url)
+    }
+    queryTable(tableId, query) {
+        url := 'https://open.feishu.cn/open-apis/bitable/v1/apps/${this.appToken}/tables/${tableId}/records/search'
+        query = query ?? {}
+        return this.app.allPages(url, nil, (url, auth) => @json.decode(@http.postJson(url, query, auth)))
+    }
+    buildFilter(conjunction, fn) {
+        f := conditionBuilder()
+        conds := fn(f)
+        if !(conds is Array) {
+            conds = [conds]
+        }
+        return {conjunction, conditions: conds}
+    }
+    buildAnds(fn) {
+        return this.buildFilter('and', fn)
+    }
+    buildOrs(fn) {
+        return this.buildFilter('or', fn)
+    }
+    from(tableId) {
+        return QueryFrom(this, tableId)
+    }
+}
+
+class conditionBuilder {
+    __getAttr__(name) {
+        return conditionField(name)
+    }
+}
+
+class conditionField {
+    __init__(name) {
+        this.name = name
+    }
+    _make(operator, value) {
+        if value is @time.Time {
+            value = ['ExactDate', str(value.unixMs)]
+        } else if !(value is Array) {
+            value = [value]
+        }
+        return {field_name: this.name, operator, value}
+    }
+    __eq__(value) {
+        return this._make('is', value)
+    }
+    __ne__(value) {
+        return this._make('isNot', value)
+    }
+    __gt__(value) {
+        return this._make('isGreater', value)
+    }
+    __ge__(value) {
+        return this._make('isGreaterEqual', value)
+    }
+    __lt__(value) {
+        return this._make('isLess', value)
+    }
+    __le__(value) {
+        return this._make('isLessEqual', value)
+    }
+    isEmpty() {
+        return this._make('isEmpty', [])
+    }
+    notEmpty() {
+        return this._make('isNotEmpty', [])
+    }
+    contains(value) {
+        return this._make('isContains', value)
+    }
+    notContains(value) {
+        return this._make('doesNotContain', value)
+    }
+    // DateTime处理
+    isToday() { return this._make('is', ['Today']) }
+    isYesterday() { return this._make('is', ['Yesterday']) }
+    isTomorrow() { return this._make('is', ['Tomorrow']) }
+    isCurrentWeek() { return this._make('is', ['CurrentWeek']) }
+    isLastWeek() { return this._make('is', ['LastWeek']) }
+    isCurrentMonth() { return this._make('is', ['CurrentMonth']) }
+    isLastMonth() { return this._make('is', ['LastMonth']) }
+    isTheLastWeek() { return this._make('is', ['TheLastWeek']) }
+    isTheNextWeek() { return this._make('is', ['TheNextWeek']) }
+    isTheLastMonth() { return this._make('is', ['TheLastMonth']) }
+    isTheNextMonth() { return this._make('is', ['TheNextMonth']) }
+}
+
+class orderBuilder {
+    __getAttr__(name) {
+        return orderField(name)
+    }
+}
+
+class orderField {
+    __init__(name, desc) {
+        this.name = name
+    }
+    asc() {
+        return {field_name: this.name}
+    }
+    desc() {
+        return {field_name: this.name, desc: true}
+    }
+}
+
+class QueryFrom {
+    __init__(table, tableId) {
+        this.table = table
+        this.tableId = tableId
+    }
+    select(...fields) {
+        return QuerySelect(this.table, this.tableId, fields)
+    }
+}
+
+class QuerySelect {
+    __init__(table, tableId, fields) {
+        this.table = table
+        this.tableId = tableId
+        this.fields = fields
+    }
+    execute() {
+        res := this.table.queryTable(this.tableId, {
+            field_names: this.files,
+            filter: this.filter,
+            sort: this.sort,
+        })
+        rv := []
+        for item in res {
+            rt := {_id: item.record_id}
+            for f in this.fields {
+                fv := item.fields[f]
+                if !fv {
+                    continue
+                }
+                if !(fv is Array) {
+                    fv = [fv]
+                }
+                rt[f] = fv.map(f => when f.type {
+                    'text'  -> f.text
+                    else    -> f.value.join(' ')
+                }).join('')
+            }
+            rv.push(rt)
+        }
+        return rv
+    }
+    toTable() {
+        res := this.execute()
+        t := @ptable(...this.fields)
+        for item in res {
+            t.add(...this.fields.map({ item[it] }))
+        }
+        return t
+    }
+    _where(conjunction, condFn) {
+        this.filter = this.table.buildFilter(conjunction, condFn)
+        return this
+    }
+    where(condFn) {
+        return this._where('and', condFn)
+    }
+    whereAnds(condFn) {
+        return this._where('and', condFn)
+    }
+    whereOrs(condFn) {
+        return this._where('or', condFn)
+    }
+    orderBy(orderFn) {
+        f := orderBuilder()
+        this.sort = orderFn(f)
+        if !(this.sort is Array) {
+            this.sort = [this.sort]
+        }
+        for i, v in this.sort {
+            if v is orderField {
+                this.sort[i] = v.asc()
+            } else if isCallable(v) {
+                this.sort[i] = v()
+            }
+        }
+        return this
+    }
+}
