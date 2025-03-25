@@ -1,3 +1,4 @@
 
 export App := import('./core').App
 export Table := import('./table').Table
+export BITable := import('./bitable').BITable
