@@ -89,36 +89,16 @@ class conditionField {
         }
         return {field_name: this.name, operator, value}
     }
-    __eq__(value) {
-        return this._make('is', value)
-    }
-    __ne__(value) {
-        return this._make('isNot', value)
-    }
-    __gt__(value) {
-        return this._make('isGreater', value)
-    }
-    __ge__(value) {
-        return this._make('isGreaterEqual', value)
-    }
-    __lt__(value) {
-        return this._make('isLess', value)
-    }
-    __le__(value) {
-        return this._make('isLessEqual', value)
-    }
-    isEmpty() {
-        return this._make('isEmpty', [])
-    }
-    notEmpty() {
-        return this._make('isNotEmpty', [])
-    }
-    contains(value) {
-        return this._make('isContains', value)
-    }
-    notContains(value) {
-        return this._make('doesNotContain', value)
-    }
+    __eq__(value) { return this._make('is', value) }
+    __ne__(value) { return this._make('isNot', value) }
+    __gt__(value) { return this._make('isGreater', value) }
+    __ge__(value) { return this._make('isGreaterEqual', value) }
+    __lt__(value) { return this._make('isLess', value) }
+    __le__(value) { return this._make('isLessEqual', value) }
+    isEmpty() { return this._make('isEmpty', []) }
+    notEmpty() { return this._make('isNotEmpty', []) }
+    contains(value) { return this._make('isContains', value) }
+    notContains(value) { return this._make('doesNotContain', value) }
     // DateTime处理
     isToday() { return this._make('is', ['Today']) }
     isYesterday() { return this._make('is', ['Yesterday']) }
