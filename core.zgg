@@ -40,7 +40,9 @@ export class App {
             url := baseUrl + '?' + @url.encodeForm(params)
             r := requestFn(url, this.getAuthHeader())
             data := must(r)
-            callback(data.items ?? [])
+            if callback(data.items ?? []) == 'break' {
+				break
+			}
             hasMore = data.has_more
             pageToken = data.page_token
         }

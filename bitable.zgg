@@ -1,3 +1,4 @@
+core := import('./core')
 
 export class BITable {
     __init__(app, appToken) {
@@ -16,10 +17,35 @@ export class BITable {
         url := 'https://open.feishu.cn/open-apis/bitable/v1/apps/${this.appToken}/tables'
         return this.app.allPages(url)
     }
-    queryTable(tableId, query) {
+    queryTable(tableId, query, offset, limit) {
         url := 'https://open.feishu.cn/open-apis/bitable/v1/apps/${this.appToken}/tables/${tableId}/records/search'
-        query = query ?? {}
-        return this.app.allPages(url, nil, (url, auth) => @json.decode(@http.postJson(url, query, auth)))
+        query    = query ?? {}
+		offset   = offset ?? 0
+		limit    = limit ?? -1
+		skipped := 0
+		res     := []
+        this.app.iterPage(url, nil,
+			pageData => {
+				[begin, end] := [0, len(pageData)]
+				if skipped < offset {
+					begin = offset - skipped
+					if begin >= end {
+						skipped += len(pageData)
+						return
+					}
+					skipped += begin
+				}
+				if limit >= 0 && end - begin + len(res) > limit {
+					end = limit - len(res) + begin
+				}
+				if end <= begin {
+					return 'break'
+				}
+				res.push(...pageData[begin:end])
+			},
+			(url, auth) => @json.decode(@http.postJson(url, query, auth)),
+		)
+		return res
     }
     buildFilter(conjunction, fn) {
         f := conditionBuilder()
@@ -38,6 +64,11 @@ export class BITable {
     from(tableId) {
         return QueryFrom(this, tableId)
     }
+	add(tableId, ...records) {
+		url := 'https://open.feishu.cn/open-apis/bitable/v1/apps/${this.appToken}/tables/${tableId}/records/batch_create'
+		payload := {records: records.map(fields => ({ fields }))}
+		core.must(@json.decode(@http.postJson(url, payload, this.app.getAuthHeader())))
+	}
 }
 
 class conditionBuilder {
@@ -135,28 +166,21 @@ class QuerySelect {
         this.table = table
         this.tableId = tableId
         this.fields = fields
+		this._offset = 0
+		this._limit = -1
     }
     execute() {
         res := this.table.queryTable(this.tableId, {
             field_names: this.files,
             filter: this.filter,
             sort: this.sort,
-        })
+        }, this._offset, this._limit)
         rv := []
         for item in res {
             rt := {_id: item.record_id}
             for f in this.fields {
                 fv := item.fields[f]
-                if !fv {
-                    continue
-                }
-                if !(fv is Array) {
-                    fv = [fv]
-                }
-                rt[f] = fv.map(f => when f.type {
-                    'text'  -> f.text
-                    else    -> f.value.join(' ')
-                }).join('')
+				rt[f] = formatFieldValue(fv)
             }
             rv.push(rt)
         }
@@ -198,4 +222,39 @@ class QuerySelect {
         }
         return this
     }
+	offset(n) {
+		this._offset = n
+		return this
+	}
+	limit(n) {
+		this._limit = n
+		return this
+	}
 }
+
+func formatFieldValue(fv) {
+	if fv is Undefined {
+		return ''
+	}
+	if fv is Int || fv is Float {
+		return @time.fromUnix(int(fv / 1000))
+	}
+	if fv is Str || fv is Bool {
+		return str(fv)
+	}
+	if fv is Array {
+		vals := fv.map({
+			when it {
+			is Str		-> it
+			is Object	-> it.name ?? it.text
+			else		-> str(it)
+			}
+		})
+		return vals.join('')
+	}
+	if fv.value is Array {
+		return fv.value.map({ it.name ?? it.text }).join('')
+	}
+	return @json.encode(fv)
+}
+
